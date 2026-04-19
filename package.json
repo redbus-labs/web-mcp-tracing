@@ -1,0 +1,15 @@
+{
+  "name": "webmcp-telemetry",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "concurrently \"npm run dev -w @webmcp-telemetry/server\" \"npm run dev -w @webmcp-telemetry/ui-dashboard\" \"npm run dev -w @webmcp-telemetry/demo-app\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.0.0"
+  }
+}

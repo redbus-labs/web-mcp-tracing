@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id             String          @id // session_id
+  appId          String          @map("app_id")
+  clientId       String?         @map("client_id")
+  userAgent      String?         @map("user_agent")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  toolExecutions ToolExecution[]
+
+  @@map("sessions")
+}
+
+model ToolExecution {
+  id              String      @id @default(uuid()) @db.Uuid
+  appId           String      @map("app_id")
+  sessionId       String?     @map("session_id")
+  session         Session?    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  pageUrl         String?     @map("page_url")
+  toolName        String      @map("tool_name")
+  arguments       Json
+  userQuery       String?     @map("user_query")
+  status          String      // 'SUCCESS' | 'ERROR'
+  errorMessage    String?     @map("error_message")
+  executionTimeMs Int         @map("execution_time_ms")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  apiTraces       ApiTrace[]
+
+  @@map("tool_executions")
+}
+
+model ApiTrace {
+  id              String        @id @default(uuid()) @db.Uuid
+  toolExecutionId String        @map("tool_execution_id") @db.Uuid
+  toolExecution   ToolExecution @relation(fields: [toolExecutionId], references: [id], onDelete: Cascade)
+  url             String
+  httpMethod      String        @map("http_method")
+  statusCode      Int?          @map("status_code")
+  durationMs      Int           @map("duration_ms")
+  requestHeaders  Json?         @map("request_headers")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@map("api_traces")
+}

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebMCP Telemetry Demo</title>
+    
+    <!-- 1. Helper to manually trigger a tool in the demo -->
+    <script>
+      window.mcpInstance = {
+        callTool: async function(name, args) {
+          // The usewebmcp hook registers tools to navigator.modelContext
+          // We'll simulate calling them here. 
+          // Note: In a real scenario, the LLM calls these directly.
+          // Since the hook uses the polyfill, we need to extract the handler from it for testing.
+          
+          // A bit hacky just for testing: wait a tick to ensure React rendered
+          await new Promise(r => setTimeout(r, 10));
+          
+          // We have to rely on a global map we intercept in the patcher for testing purposes,
+          // or we just call the handler if we know it.
+          // Since we patched it, we'll expose the tools map.
+          const handler = window.__testToolsMap?.get(name);
+          if (!handler) throw new Error(`Tool ${name} not found`);
+          
+          console.log(`[WebMCP] Calling tool: ${name} with args`, args);
+          return await handler(args);
+        }
+      };
+    </script>
+
+    <!-- 2. WebMCP Telemetry SDK -->
+    <!-- The user runs pnpm build at the root to create this in browser-sdk/dist -->
+    <script src="/@fs/Users/aakash.srivastav/Desktop/Projects/web-mcp-tracing/packages/browser-sdk/dist/webmcp-telemetry.min.js"></script>
+
+    <!-- 3. Initialize Telemetry -->
+    <script>
+      // The telemetry script creates window.WebMCPTelemetry
+      if (window.WebMCPTelemetry) {
+        window.WebMCPTelemetry.init({
+          endpoint: "http://localhost:3001/api/collect",
+          appId: "demo-weather-app",
+          clientId: "tester_1",
+          sessionId: "demo_session_123"
+        });
+      } else {
+        console.error("Telemetry SDK failed to load. Make sure you ran 'pnpm build' in browser-sdk.");
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-CbTOnwbx.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Bp1Qip5o.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>

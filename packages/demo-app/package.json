@@ -1,0 +1,26 @@
+{
+  "name": "@webmcp-telemetry/demo-app",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 8080",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mcp-b/webmcp-polyfill": "^2.2.0",
+    "@webmcp-telemetry/browser": "*",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "usewebmcp": "^2.2.0"
+  },
+  "devDependencies": {
+    "@mcp-b/webmcp-types": "^2.2.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.2.2",
+    "vite": "^5.2.0"
+  }
+}
