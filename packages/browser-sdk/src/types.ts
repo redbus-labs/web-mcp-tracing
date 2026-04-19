@@ -19,6 +19,7 @@ export interface ToolExecutionEvent {
   errorMessage?: string;
   executionTimeMs: number;
   timestamp: number;
+  promptTraceId?: string;
 }
 
 export interface ApiTraceEvent {
@@ -33,4 +34,15 @@ export interface ApiTraceEvent {
   timestamp: number;
 }
 
-export type TelemetryEvent = ToolExecutionEvent | ApiTraceEvent;
+export interface PromptTraceEvent {
+  type: 'prompt_trace';
+  traceId: string;
+  sessionId: string;
+  appId: string;
+  prompt: string;
+  response: string;
+  executionTimeMs: number;
+  timestamp: number;
+}
+
+export type TelemetryEvent = ToolExecutionEvent | ApiTraceEvent | PromptTraceEvent;

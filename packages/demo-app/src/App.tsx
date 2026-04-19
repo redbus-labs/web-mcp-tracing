@@ -3,6 +3,10 @@ import { useWebMCP } from 'usewebmcp';
 
 export default function App() {
   const [logs, setLogs] = useState<{ id: string; message: string; isError: boolean }[]>([]);
+  const [userQuery, setUserQuery] = useState('');
+  const [isPrompting, setIsPrompting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const addLog = (message: string, isError = false) => {
     setLogs((prev) => [
@@ -106,12 +110,140 @@ export default function App() {
     }
   };
 
+  const handlePromptSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userQuery.trim()) return;
+
+    const LanguageModel = (window as any).LanguageModel;
+    if (!LanguageModel || typeof LanguageModel.create !== 'function') {
+      alert('Chrome Prompt API (LanguageModel) is not supported. Please enable the required flags.');
+      return;
+    }
+
+    setIsPrompting(true);
+    addLog(`Sending query to Prompt API: "${userQuery}"`);
+
+    try {
+      const availability = await LanguageModel.availability();
+      if (availability === 'unavailable') {
+        alert('The language model cannot run on this device.');
+        setIsPrompting(false);
+        return;
+      }
+
+      const needsDownload = availability !== 'available';
+      if (needsDownload) {
+        setIsDownloading(true);
+        setDownloadProgress(0);
+        addLog('Model download triggered. Please wait...');
+      }
+
+      const schema = {
+        type: "object",
+        properties: {
+          toolName: {
+            type: "string",
+            enum: ["get_weather", "calculate_shipping", "book_flight"],
+            description: "The name of the tool to execute"
+          },
+          args: {
+            type: "object",
+            description: "The arguments required for the tool"
+          }
+        },
+        required: ["toolName", "args"],
+        additionalProperties: false
+      };
+
+      const session = await LanguageModel.create({
+        monitor(m: any) {
+          m.addEventListener('downloadprogress', (e: any) => {
+            const isFraction = e.total === undefined || e.total === 0;
+            const progress = isFraction ? e.loaded : (e.loaded / e.total);
+            setDownloadProgress(Math.round(progress * 100));
+            if (needsDownload && progress >= 1) {
+              addLog('Download complete! Extracting and loading into memory...');
+            }
+          });
+        },
+        systemPrompt: `You are an intent routing assistant. Your job is to select the correct tool based on the user's query.
+Available tools:
+1. get_weather (requires "location" string)
+2. calculate_shipping (requires "weight" number)
+3. book_flight (requires "destination" string)`
+      });
+
+      if (needsDownload) {
+        setIsDownloading(false);
+        addLog('Model successfully loaded into memory.');
+      }
+
+      const response = await session.prompt(userQuery, {
+        responseConstraint: schema
+      });
+      addLog(`Prompt API responded: ${response}`);
+
+      // Try parsing the JSON
+      let parsed;
+      try {
+        // Strip markdown code block if LLM included it despite instructions
+        const cleanResponse = response.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+        parsed = JSON.parse(cleanResponse);
+      } catch (parseErr) {
+        throw new Error('Failed to parse Prompt API response as JSON: ' + response);
+      }
+
+      if (!parsed.toolName || !parsed.args) {
+        throw new Error('Prompt API response missing toolName or args fields');
+      }
+
+      addLog(`Calling tool ${parsed.toolName} with args ${JSON.stringify(parsed.args)}`);
+      
+      // Execute the corresponding tool
+      await (window as any).mcpInstance.callTool(parsed.toolName, {
+        ...parsed.args,
+        user_query: userQuery,
+      });
+
+    } catch (err: any) {
+      addLog(`Prompt API Error: ${err.message}`, true);
+      setIsDownloading(false);
+    } finally {
+      setIsPrompting(false);
+      setUserQuery('');
+    }
+  };
+
   return (
     <div>
       <h1>WebMCP Telemetry Demo App</h1>
       <p>This demo application registers simulated WebMCP tools using React and artificially triggers them to test telemetry capture.</p>
 
+      <div className="prompt-section">
+        <h2>Test Prompt API Routing</h2>
+        <p>Type a request to use the local Chrome AI model to select the right tool.</p>
+        <form onSubmit={handlePromptSubmit} className="prompt-form">
+          <input
+            type="text"
+            className="prompt-input"
+            value={userQuery}
+            onChange={(e) => setUserQuery(e.target.value)}
+            placeholder="e.g. What is the weather like in New York today?"
+            disabled={isPrompting}
+          />
+          <button type="submit" className="prompt-button" disabled={isPrompting || !userQuery.trim()}>
+            {isPrompting ? (isDownloading ? `Downloading Model: ${downloadProgress}%` : 'Thinking...') : 'Submit'}
+          </button>
+        </form>
+        {isDownloading && (
+          <div style={{ marginTop: '10px', fontSize: '14px', color: '#666' }}>
+            <em>Model is downloading/extracting for the first time. This may take a few moments. Progress: {downloadProgress}%</em>
+          </div>
+        )}
+      </div>
+
       <div className="actions">
+        <h2>Manual Tool Execution</h2>
         <button onClick={handleWeather}>Trigger get_weather (Success API call)</button>
         <button onClick={handleShipping}>Trigger calculate_shipping (Duration test)</button>
         <button onClick={handleFlight}>Trigger book_flight (Error test)</button>

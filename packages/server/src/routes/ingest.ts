@@ -33,6 +33,7 @@ router.post('/', async (req, res) => {
           status,
           errorMessage,
           executionTimeMs,
+          promptTraceId,
         } = event;
 
         // Upsert Session
@@ -65,6 +66,44 @@ router.post('/', async (req, res) => {
             userQuery,
             status,
             errorMessage,
+            executionTimeMs,
+            promptTraceId: promptTraceId || null,
+          },
+        });
+      } else if (event.type === 'prompt_trace') {
+        const {
+          traceId,
+          sessionId,
+          appId,
+          prompt,
+          response,
+          executionTimeMs,
+        } = event;
+
+        // Upsert Session if not exists
+        if (sessionId) {
+          await prisma.session.upsert({
+            where: { id: sessionId },
+            update: {
+              appId,
+              userAgent: req.headers['user-agent'] || null,
+            },
+            create: {
+              id: sessionId,
+              appId,
+              userAgent: req.headers['user-agent'] || null,
+            },
+          });
+        }
+
+        // Create Prompt Trace
+        await prisma.promptTrace.create({
+          data: {
+            id: traceId,
+            sessionId: sessionId || null,
+            appId,
+            prompt,
+            response,
             executionTimeMs,
           },
         });

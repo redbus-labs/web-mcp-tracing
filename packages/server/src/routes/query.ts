@@ -151,7 +151,7 @@ router.get('/executions', async (req, res) => {
         orderBy: { createdAt: 'desc' },
         skip: Number(skip),
         take: Number(take),
-        include: { apiTraces: true }
+        include: { apiTraces: true, promptTrace: true }
       }),
       prisma.toolExecution.count({ where })
     ]);
@@ -159,6 +159,39 @@ router.get('/executions', async (req, res) => {
     res.json({ items, total });
   } catch (error) {
     console.error('Failed to fetch executions', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// GET /api/metrics/prompts
+router.get('/prompts', async (req, res) => {
+  try {
+    const { skip = 0, take = 50, sessionId } = req.query;
+    const baseWhere = getFilters(req);
+    const where: any = {};
+    
+    if (baseWhere.appId) where.appId = baseWhere.appId;
+    if (baseWhere.createdAt) where.createdAt = baseWhere.createdAt;
+    if (sessionId) where.sessionId = String(sessionId);
+
+    const [items, total] = await Promise.all([
+      prisma.promptTrace.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: Number(skip),
+        take: Number(take),
+        include: {
+          toolExecutions: {
+            select: { toolName: true }
+          }
+        }
+      }),
+      prisma.promptTrace.count({ where })
+    ]);
+
+    res.json({ items, total });
+  } catch (error) {
+    console.error('Failed to fetch prompt traces', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -247,6 +280,7 @@ router.get('/recent', async (req, res) => {
       orderBy: { createdAt: 'desc' },
       include: {
         apiTraces: true,
+        promptTrace: true,
       },
     });
 

@@ -9,6 +9,13 @@ Ensure you have the following installed on your local machine:
 - **npm** (v8 or higher)
 - **Docker** & **Docker Compose** (Ensure the Docker daemon is running)
 
+### Testing the Chrome Prompt API Example (Optional)
+The demo app includes an interactive section that uses the local AI model built into Chrome to detect intents. To use this specific feature, you must have the **Prompt API** enabled in your browser:
+1. You must be using a recent version of Google Chrome (Dev or Canary is recommended).
+2. Follow the official [Chrome Prompt API setup instructions](https://docs.google.com/document/d/1VG8HIyz361zGduWgNG7R_R8XkvglBxDhk1Smcd8jqsg/edit) to enable Gemini Nano and the necessary flags (`#prompt-api-for-gemini-nano`).
+
+**Note on initial model download:** When you use the Prompt API for the first time on your machine, Chrome will automatically download the built-in Gemini Nano model. The demo app UI will show you the exact download progress ("Downloading Model: X%"). This is completely normal and can take a few minutes depending on your internet connection.
+
 ## 1. Start the Database Infrastructure
 
 The telemetry backend requires a PostgreSQL database. We use Docker to spin one up instantly.

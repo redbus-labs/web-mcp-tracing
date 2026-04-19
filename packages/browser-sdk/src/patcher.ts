@@ -1,4 +1,4 @@
-import { TelemetryConfig, ToolExecutionEvent, ApiTraceEvent } from './types';
+import { TelemetryConfig, ToolExecutionEvent, ApiTraceEvent, PromptTraceEvent } from './types';
 import { queueEvent } from './sender';
 
 // Types package doesn't have an export at '.' since it's a types-only package
@@ -13,6 +13,11 @@ let currentConfig: TelemetryConfig | null = null;
 const pendingApiTraces = new Map<string, ApiTraceEvent[]>();
 // Set to track executions that have already finished
 const completedExecutions = new Set<string>();
+
+// Global tracking for Prompt API linkage
+let lastPromptTraceId: string | null = null;
+let lastPromptTime: number = 0;
+const PROMPT_LINK_TIMEOUT_MS = 10000; // Link Prompt API calls to Tool Executions if within 10s
 
 // UUID generator
 function generateUUID() {
@@ -33,6 +38,7 @@ export function initPatcher(config: TelemetryConfig) {
   patchWebMCP();
   patchFetch();
   patchXHR();
+  tryPatchPromptApi();
 }
 
 function patchWebMCP() {
@@ -83,6 +89,11 @@ function patchWebMCP() {
       const previousExecutionId = activeToolExecutionId;
       activeToolExecutionId = executionId; // Set active context for fetch/xhr tracing
 
+      let linkedPromptTraceId: string | undefined = undefined;
+      if (lastPromptTraceId && (Date.now() - lastPromptTime < PROMPT_LINK_TIMEOUT_MS)) {
+        linkedPromptTraceId = lastPromptTraceId;
+      }
+
       let userQuery = args?.user_query || '';
       // Clean up the injected argument so it doesn't break the actual handler
       const originalArgs = { ...args };
@@ -115,6 +126,7 @@ function patchWebMCP() {
           errorMessage,
           executionTimeMs: Math.round(durationMs),
           timestamp: Date.now(),
+          promptTraceId: linkedPromptTraceId,
         };
 
         queueEvent(event);
@@ -127,6 +139,10 @@ function patchWebMCP() {
           pendingApiTraces.delete(executionId);
         }
         
+        if (linkedPromptTraceId) {
+          lastPromptTime = Date.now();
+        }
+
         // Restore previous context
         activeToolExecutionId = previousExecutionId;
       }
@@ -302,5 +318,85 @@ function patchXHR() {
     }
 
     return originalSend.call(this, body);
+  };
+}
+
+// Start a capped retry for window.ai since it might load asynchronously
+let promptApiRetryCount = 0;
+function tryPatchPromptApi() {
+  const LanguageModel = (window as any).LanguageModel;
+  if (LanguageModel && typeof LanguageModel.create === 'function') {
+    patchPromptApi(LanguageModel);
+  } else if (promptApiRetryCount < 10) {
+    promptApiRetryCount++;
+    setTimeout(tryPatchPromptApi, 500);
+  }
+}
+
+function patchPromptApi(LanguageModel: any) {
+  if (!LanguageModel || typeof LanguageModel.create !== 'function') {
+    return;
+  }
+
+  const originalCreate = LanguageModel.create;
+
+  LanguageModel.create = async function (options: any) {
+    const session = await originalCreate.call(this, options);
+
+    if (session && typeof session.prompt === 'function') {
+      const originalPrompt = session.prompt;
+      
+      session.prompt = async function (text: string, promptOptions?: any) {
+        const startTime = performance.now();
+        const promptTraceId = generateUUID();
+        
+        try {
+          const response = await originalPrompt.call(this, text, promptOptions);
+          const durationMs = performance.now() - startTime;
+          
+          if (currentConfig) {
+            const event: PromptTraceEvent = {
+              type: 'prompt_trace',
+              traceId: promptTraceId,
+              sessionId: currentConfig.sessionId || 'anonymous',
+              appId: currentConfig.appId,
+              prompt: text,
+              response: typeof response === 'string' ? response : JSON.stringify(response),
+              executionTimeMs: Math.round(durationMs),
+              timestamp: Date.now()
+            };
+            queueEvent(event);
+            
+            // Set global link for subsequent tool calls
+            lastPromptTraceId = promptTraceId;
+            lastPromptTime = Date.now();
+          }
+
+          return response;
+        } catch (err: any) {
+          const durationMs = performance.now() - startTime;
+          if (currentConfig) {
+            const event: PromptTraceEvent = {
+              type: 'prompt_trace',
+              traceId: promptTraceId,
+              sessionId: currentConfig.sessionId || 'anonymous',
+              appId: currentConfig.appId,
+              prompt: text,
+              response: `ERROR: ${err instanceof Error ? err.message : String(err)}`,
+              executionTimeMs: Math.round(durationMs),
+              timestamp: Date.now()
+            };
+            queueEvent(event);
+            
+            // Set global link for subsequent tool calls
+            lastPromptTraceId = promptTraceId;
+            lastPromptTime = Date.now();
+          }
+          throw err;
+        }
+      };
+    }
+
+    return session;
   };
 }

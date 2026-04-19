@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
-import { Search, CheckCircle2, XCircle, ChevronRight } from 'lucide-react';
+import { Search, CheckCircle2, XCircle, ChevronRight, Brain } from 'lucide-react';
 import { useAppContext } from '../components/AppContext';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -16,6 +16,7 @@ export default function Sessions() {
   const [search, setSearch] = useState('');
   
   const [executions, setExecutions] = useState<any[]>([]);
+  const [prompts, setPrompts] = useState<any[]>([]);
   
   // Selection States
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -43,22 +44,27 @@ export default function Sessions() {
     fetchSessions();
   }, [selectedApp, dateRange, search]);
 
-  // Fetch Executions when Session selected
+  // Fetch Executions and Prompts when Session selected
   useEffect(() => {
     if (!selectedSessionId) {
       setExecutions([]);
+      setPrompts([]);
       setSelectedExecution(null);
       return;
     }
 
     let query = `?appId=${selectedApp}&dateRange=${dateRange}&sessionId=${selectedSessionId}&take=100`;
-    fetch(`/api/metrics/executions${query}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setExecutions(data.items || []);
-        setSelectedExecution(null);
-      })
-      .catch(console.error);
+    
+    Promise.all([
+      fetch(`/api/metrics/executions${query}`).then(res => res.json()),
+      fetch(`/api/metrics/prompts${query}`).then(res => res.json())
+    ])
+    .then(([execData, promptData]) => {
+      setExecutions(execData.items || []);
+      setPrompts(promptData.items || []);
+      setSelectedExecution(null);
+    })
+    .catch(console.error);
   }, [selectedSessionId, selectedApp, dateRange]);
 
   return (
@@ -146,65 +152,112 @@ export default function Sessions() {
           </ScrollArea>
         </div>
 
-        {/* Column 2: Tools Called */}
+        {/* Column 2: Tools & AI Called */}
         <div className="flex flex-col border rounded-md bg-card overflow-hidden">
           <div className="p-3 border-b bg-muted/30 flex justify-between items-center h-[97px]">
-            <h3 className="font-semibold">Tools Called</h3>
-            <Badge variant="outline">{executions.length}</Badge>
+            <h3 className="font-semibold">Tools & Prompts</h3>
+            <Badge variant="outline">{executions.length + prompts.length}</Badge>
           </div>
           <ScrollArea className="flex-1">
             {!selectedSessionId ? (
               <div className="h-full flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
-                Select a session from the left to view tools called.
+                Select a session from the left to view activity.
               </div>
             ) : (
               <div className="p-2 space-y-2">
-                {executions.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-muted-foreground">No tools called in this session.</div>
+                {executions.length === 0 && prompts.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">No activity in this session.</div>
                 ) : (
-                  executions.map((ex) => (
-                    <Card 
-                      key={ex.id}
-                      className={`p-3 cursor-pointer transition-colors ${
-                        selectedExecution?.id === ex.id 
-                          ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/20' 
-                          : 'hover:bg-muted/50'
-                      }`}
-                      onClick={() => setSelectedExecution(ex)}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2">
-                          {ex.status === 'SUCCESS' ? (
-                            <CheckCircle2 className="h-3 w-3 text-green-500" />
-                          ) : (
-                            <XCircle className="h-3 w-3 text-destructive" />
-                          )}
-                          <span className="text-sm font-semibold truncate max-w-[140px]" title={ex.toolName}>
-                            {ex.toolName}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground">
-                          {ex.executionTimeMs}ms
-                        </span>
-                      </div>
-                      
-                      {ex.userQuery && (
-                        <div className="text-xs text-muted-foreground bg-muted/50 p-1.5 rounded truncate italic mb-2">
-                          "{ex.userQuery}"
-                        </div>
-                      )}
+                  [...executions.map(e => ({ ...e, _type: 'execution' })), ...prompts.map(p => ({ ...p, _type: 'prompt' }))]
+                    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                    .map((item) => {
+                      if (item._type === 'prompt') {
+                        return (
+                          <Card 
+                            key={item.id}
+                            className="p-3 border-l-4 border-l-purple-500 bg-purple-500/5 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex items-center gap-2">
+                                <Brain className="h-3 w-3 text-purple-500" />
+                                <span className="text-sm font-semibold truncate text-purple-700 dark:text-purple-400">
+                                  Prompt API
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground">
+                                {item.executionTimeMs}ms
+                              </span>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <div className="text-xs text-muted-foreground bg-background/50 p-2 rounded truncate italic border border-border/50">
+                                <span className="font-semibold not-italic">Prompt:</span> {item.prompt}
+                              </div>
+                              <div className="text-xs text-muted-foreground bg-background/50 p-2 rounded line-clamp-3 border border-border/50">
+                                <span className="font-semibold not-italic">Response:</span> {item.response}
+                              </div>
+                            </div>
 
-                      <div className="flex justify-between items-center mt-2">
-                        <span className="text-[10px] text-muted-foreground">
-                          {format(new Date(ex.createdAt), 'HH:mm:ss')}
-                        </span>
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
-                          {ex.apiTraces?.length || 0} API calls
-                          <ChevronRight className="h-3 w-3" />
-                        </div>
-                      </div>
-                    </Card>
-                  ))
+                            <div className="flex justify-between items-center mt-2">
+                              <span className="text-[10px] text-muted-foreground">
+                                {format(new Date(item.createdAt), 'HH:mm:ss')}
+                              </span>
+                              {item.toolExecutions && item.toolExecutions.length > 0 && (
+                                <Badge variant="outline" className="text-[9px] h-4">
+                                  Linked to {item.toolExecutions.length} tool{item.toolExecutions.length > 1 ? 's' : ''}
+                                </Badge>
+                              )}
+                            </div>
+                          </Card>
+                        );
+                      }
+                      
+                      // Execution Card
+                      const ex = item;
+                      return (
+                        <Card 
+                          key={ex.id}
+                          className={`p-3 cursor-pointer transition-colors ${
+                            selectedExecution?.id === ex.id 
+                              ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/20' 
+                              : 'hover:bg-muted/50'
+                          }`}
+                          onClick={() => setSelectedExecution(ex)}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex items-center gap-2">
+                              {ex.status === 'SUCCESS' ? (
+                                <CheckCircle2 className="h-3 w-3 text-green-500" />
+                              ) : (
+                                <XCircle className="h-3 w-3 text-destructive" />
+                              )}
+                              <span className="text-sm font-semibold truncate max-w-[140px]" title={ex.toolName}>
+                                {ex.toolName}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">
+                              {ex.executionTimeMs}ms
+                            </span>
+                          </div>
+                          
+                          {ex.userQuery && (
+                            <div className="text-xs text-muted-foreground bg-muted/50 p-1.5 rounded truncate italic mb-2">
+                              "{ex.userQuery}"
+                            </div>
+                          )}
+
+                          <div className="flex justify-between items-center mt-2">
+                            <span className="text-[10px] text-muted-foreground">
+                              {format(new Date(ex.createdAt), 'HH:mm:ss')}
+                            </span>
+                            <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
+                              {ex.apiTraces?.length || 0} API calls
+                              <ChevronRight className="h-3 w-3" />
+                            </div>
+                          </div>
+                        </Card>
+                      );
+                    })
                 )}
               </div>
             )}

@@ -14,6 +14,7 @@ model Session {
   userAgent      String?         @map("user_agent")
   createdAt      DateTime        @default(now()) @map("created_at")
   toolExecutions ToolExecution[]
+  promptTraces   PromptTrace[]
 
   @@map("sessions")
 }
@@ -32,6 +33,8 @@ model ToolExecution {
   executionTimeMs Int         @map("execution_time_ms")
   createdAt       DateTime    @default(now()) @map("created_at")
   apiTraces       ApiTrace[]
+  promptTraceId   String?      @map("prompt_trace_id") @db.Uuid
+  promptTrace     PromptTrace? @relation(fields: [promptTraceId], references: [id], onDelete: SetNull)
 
   @@map("tool_executions")
 }
@@ -48,4 +51,18 @@ model ApiTrace {
   createdAt       DateTime      @default(now()) @map("created_at")
 
   @@map("api_traces")
+}
+
+model PromptTrace {
+  id              String         @id @default(uuid()) @db.Uuid
+  sessionId       String?        @map("session_id")
+  session         Session?       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  appId           String         @map("app_id")
+  prompt          String
+  response        String
+  executionTimeMs Int            @map("execution_time_ms")
+  toolExecutions  ToolExecution[]
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  @@map("prompt_traces")
 }
